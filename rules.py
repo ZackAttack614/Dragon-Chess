@@ -2,36 +2,46 @@ import numpy as np
 
 class Board():
     piece_map = { 1: 10, -1: 11, 2: 0, -2: 1, 3: 4, -3: 5, 4: 6, -4: 7, 5: 2, -5: 3, 6: 8, -6: 9 }
-    def __init__(self): # +-1 = king, +-2 = pawn, -3 = knight, -4 = bishop, -5 = rook, -6 = queen
-        self.board = np.zeros((8, 8))
-        self.board[0, 4] = 1
-        self.board[1, 3:6] = 2
-        self.board[6, :] = -2
-        self.board[7, 0] = -5
-        self.board[7, 1] = -3
-        self.board[7, 2] = -4
-        self.board[7, 3] = -6
-        self.board[7, 4] = -1
-        self.board[7, 5] = -4
-        self.board[7, 6] = -3
-        self.board[7, 7] = -5
+    int_to_letter = {
+        0: ' ', 1: 'K',  2: 'P',  3: 'N',  4: 'B',  5: 'R',  6: 'Q',
+                -1: 'k', -2: 'p', -3: 'n', -4: 'b', -5: 'r', -6: 'q'
+    }
+    letter_to_int = {
+        'K':  1, 'P':  2, 'N':  3, 'B':  4, 'R':  5, 'Q':  6,
+        'k': -1, 'p': -2, 'n': -3, 'b': -4, 'r': -5, 'q': -6
+    }
+    def __init__(self, fen='rnbqkbnr/pppppppp/8/8/8/8/3PPP2/4K3 w kq - 0 1'):
+        self.reset_game(fen)
 
-        self._white_castle_kingside = False
-        self._white_castle_queenside = False
-        self._black_castle_kingside = True
-        self._black_castle_queenside = True
+    def reset_game(self, fen):
+        self.board = np.zeros((8, 8))
+
+        piece_loc, turn, castles, en_passant, halfmove, fullmove = fen.split(' ')
+        for row_index, row in enumerate(piece_loc.split('/')[::-1]):
+            col_index = 0
+            for chr in row:
+                if chr in self.letter_to_int:
+                    self.board[row_index, col_index] = self.letter_to_int[chr]
+                elif chr.isnumeric():
+                    col_index += int(chr) - 1
+                else:
+                    raise ValueError(f'FEN position is invalid: {fen}')
+                col_index += 1
+
+        self.turn = (turn == 'w')
+
+        self._white_castle_kingside = 'K' in castles
+        self._white_castle_queenside = 'Q' in castles
+        self._black_castle_kingside = 'k' in castles
+        self._black_castle_queenside = 'q' in castles
 
     def __repr__(self):
-        int_to_letter = {
-            0: ' ', 1: 'K', 2: 'P', 3: 'N', 4: 'B', 5: 'R', 6: 'Q',
-            -1: 'k', -2: 'p', -3: 'n', -4: 'b', -5: 'r', -6: 'q'
-        }
         fboard = np.flip(self.board, axis=0)
         repr = '-----------------\n'
         for row in range(8):
             row_repr = '|'
             for col in range(8):
-                row_repr += f'{int_to_letter[int(fboard[row, col])]}|'
+                row_repr += f'{self.int_to_letter[int(fboard[row, col])]}|'
             repr += row_repr + '\n'
         return repr + '-----------------'
 
@@ -70,37 +80,55 @@ class Board():
 
         return state
 
-    def get_legal_moves(self): # white king, black king, white pawn, black pawn, ..., black castle king, black castle queen
-        legal = np.array((4000))
-        legal[0] = self._is_legal_move_king(0, 0, 1, 0)
-        legal[1] = self._is_legal_move_king(0, 0, 1, 1)
-        legal[2] = self._is_legal_move_king(0, 0, 0, 1)
+    def get_legal_moves(self): # white king, white pawn, ..., black king, black pawn, white castle king, white castle queen, black castle king, black castle queen
+        legal = np.zeros((7352))
+        color = int(not self.turn) # 0 = white, 1 = black
+        legal[3674*color+0] = self._is_legal_move_king(0, 0, 1, 0)
+        legal[3674*color+1] = self._is_legal_move_king(0, 0, 1, 1)
+        legal[3674*color+2] = self._is_legal_move_king(0, 0, 0, 1)
         for col in range(1, 7):
-            legal[5*col-2] = self._is_legal_move_king(0, col, 0, col-1)
+            legal[3674*color+5*col-2] = self._is_legal_move_king(0, col, 0, col-1)
             for i in range(col-1, col+2):
-                legal[5*col+(i-col)] = self._is_legal_move_king(0, col, 1, i)
-            legal[5*col+2] = self._is_legal_move_king(0, col, 0, col+1)
-        legal[33] = self._is_legal_move_king(0, 7, 0, 6)
-        legal[34] = self._is_legal_move_king(0, 7, 1, 6)
-        legal[35] = self._is_legal_move_king(0, 7, 1, 7)
+                legal[3674*color+5*col+(i-col)] = self._is_legal_move_king(0, col, 1, i)
+            legal[3674*color+5*col+2] = self._is_legal_move_king(0, col, 0, col+1)
+        legal[3674*color+33] = self._is_legal_move_king(0, 7, 0, 6)
+        legal[3674*color+34] = self._is_legal_move_king(0, 7, 1, 6)
+        legal[3674*color+35] = self._is_legal_move_king(0, 7, 1, 7)
         for row in range(1, 7):
             for col in [0, 7]:
-                legal[36+5*(2*row-2+col/7)] = self._is_legal_move_king(row, col, row+1, col)
-                legal[37+5*(2*row-2+col/7)] = self._is_legal_move_king(row, col, row+1, col+1)
-                legal[38+5*(2*row-2+col/7)] = self._is_legal_move_king(row, col, row, col+1)
-                legal[39+5*(2*row-2+col/7)] = self._is_legal_move_king(row, col, row-1, col+1)
-                legal[40+5*(2*row-2+col/7)] = self._is_legal_move_king(row, col, row-1, col)
-        legal[96] = self._is_legal_move_king(7, 0, 7, 1)
-        legal[97] = self._is_legal_move_king(7, 0, 6, 1)
-        legal[98] = self._is_legal_move_king(7, 0, 6, 0)
+                legal[3674*color+int(36+5*(2*row-2+col/7))] = self._is_legal_move_king(row, col, row+1, col)
+                legal[3674*color+int(37+5*(2*row-2+col/7))] = self._is_legal_move_king(row, col, row+1, col+1)
+                legal[3674*color+int(38+5*(2*row-2+col/7))] = self._is_legal_move_king(row, col, row, col+1)
+                legal[3674*color+int(39+5*(2*row-2+col/7))] = self._is_legal_move_king(row, col, row-1, col+1)
+                legal[3674*color+int(40+5*(2*row-2+col/7))] = self._is_legal_move_king(row, col, row-1, col)
+        legal[3674*color+96] = self._is_legal_move_king(7, 0, 7, 1)
+        legal[3674*color+97] = self._is_legal_move_king(7, 0, 6, 1)
+        legal[3674*color+98] = self._is_legal_move_king(7, 0, 6, 0)
         for col in range(1, 7):
-            legal[5*col+94] = self._is_legal_move_
-        # for col in range(8): # white king first row
-            
+            legal[3674*color+5*col+94] = self._is_legal_move_king(7, col, 7, col+1)
+            for i in range(-1, 2):
+                legal[3674*color+5*col+96+i] = self._is_legal_move_king(7, col, 6, col-i)
+            legal[3674*color+5*col+98] = self._is_legal_move_king(7, col, 7, col-1)
+        legal[3674*color+129] = self._is_legal_move_king(7, 7, 6, 7)
+        legal[3674*color+130] = self._is_legal_move_king(7, 7, 6, 6)
+        legal[3674*color+131] = self._is_legal_move_king(7, 7, 7, 6)
+        for row in range(1, 7):
+            for col in range(1, 7):
+                legal[3674*color+132+8*(6*(row-1)+col-1)] = self._is_legal_move_king(row, col, row+1, col)
+                legal[3674*color+133+8*(6*(row-1)+col-1)] = self._is_legal_move_king(row, col, row+1, col+1)
+                legal[3674*color+134+8*(6*(row-1)+col-1)] = self._is_legal_move_king(row, col, row, col+1)
+                legal[3674*color+135+8*(6*(row-1)+col-1)] = self._is_legal_move_king(row, col, row-1, col+1)
+                legal[3674*color+136+8*(6*(row-1)+col-1)] = self._is_legal_move_king(row, col, row-1, col)
+                legal[3674*color+137+8*(6*(row-1)+col-1)] = self._is_legal_move_king(row, col, row-1, col-1)
+                legal[3674*color+138+8*(6*(row-1)+col-1)] = self._is_legal_move_king(row, col, row, col-1)
+                legal[3674*color+139+8*(6*(row-1)+col-1)] = self._is_legal_move_king(row, col, row+1, col-1)
         # for col in range(8): # white pawns
         #     legal[10*col] = self._is_legal_move_pawn(1, col, 3, col)
         #     for start in range(1, 6):
         #         legal[10*col+start] = self._is_legal_move_pawn(start, col, )
+
+        ######## DON'T FORGET CASTLING
+        return legal
    
     def _is_legal_move(self, loc_row, loc_col, new_row, new_col):
         if not (-1 < new_row < 8) or not (-1 < new_col < 8): # Moving outside of the board
@@ -113,6 +141,12 @@ class Board():
         else:
             if self.board[new_row, new_col] < 0:
                 return False
+        if self.board[loc_row, loc_col] < 0 and self.turn: # black piece on white's turn
+            return False
+        elif self.board[loc_row, loc_col] > 0 and not self.turn: # white piece on black's turn
+            return False
+        elif self.board[loc_row, loc_col] == 0: # no piece
+            return False
         return True
 
     def _is_legal_move_pawn(self, loc_row, loc_col, new_row, new_col):
@@ -216,12 +250,17 @@ class Board():
         if piece_map[pieceType](loc_row, loc_col, new_row, new_col):
             self.board[new_row, new_col] = self.board[loc_row, loc_col]
             self.board[loc_row, loc_col] = 0
+            self.turn = not self.turn
         else:
             return ValueError
 
 if __name__ == '__main__':
-    board = Board()
-    board.move(6, 4, 4, 4)
-    board.move(7, 5, 5, 3)
-    print(board._blackbird_board_state()[:, :, 0])
-    # print(board)
+    board = Board('1r3r1k/p2b2p1/7p/2pBb2Q/3pP1P1/4q3/PPP3K1/R6R w - - 4 28')
+    lm = board.get_legal_moves()
+    for i in range(len(lm)):
+        if lm[i] == 1:
+            print(i)
+    # board.move(6, 4, 4, 4)
+    # board.move(7, 5, 5, 3)
+    # print(board._blackbird_board_state()[:, :, 0])
+    print(board)
